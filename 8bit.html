@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>8-bit 像素藝術轉換器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 確保像素繪製時邊緣清晰，不會模糊 */
+        canvas {
+            image-rendering: pixelated; /* Chrome, Edge */
+            image-rendering: crisp-edges; /* Firefox */
+        }
+        
+        .retro-font {
+            font-family: 'Courier New', Courier, monospace;
+            letter-spacing: -0.5px;
+        }
+
+        /* 模擬 CRT 螢幕掃描線效果 (選用) */
+        .scanlines {
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(0,0,0,0.1) 50%,
+                rgba(0,0,0,0.1)
+            );
+            background-size: 100% 4px;
+        }
+
+        /* 程式碼區塊樣式 */
+        .code-preview {
+            background-color: #1e1e1e;
+            color: #9cdcfe;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            white-space: pre;
+            overflow-x: auto;
+        }
+        
+        /* 自定義捲軸 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #2d2d2d; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #555; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #777; 
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-200 min-h-screen flex flex-col font-sans">
+
+    <!-- Header -->
+    <header class="bg-slate-800 p-4 border-b border-slate-700 shadow-lg relative z-20">
+        <div class="container mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <h1 class="text-2xl md:text-3xl font-bold text-green-400 retro-font flex items-center gap-2">
+                <span class="text-3xl">👾</span> 8-BIT 轉換器
+            </h1>
+            
+            <div class="flex gap-4 items-center">
+                <p class="text-sm text-slate-400 hidden md:block">將圖片轉為 8-bit 並匯出程式碼</p>
+                <!-- View App Source Button (Original) -->
+                <button id="viewSourceBtn" class="bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs py-2 px-3 rounded border border-slate-600 flex items-center gap-2 transition-colors">
+                    &lt;/&gt; 網頁源碼
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow container mx-auto p-4 md:p-6 flex flex-col lg:flex-row gap-6 relative z-10">
+        
+        <!-- Controls Panel -->
+        <div class="w-full lg:w-1/3 bg-slate-800 p-6 rounded-xl shadow-xl h-fit border border-slate-700">
+            <div class="space-y-6">
+                
+                <!-- Upload -->
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="block text-sm font-bold text-slate-300">1. 上傳圖片</label>
+                        <!-- Rotate Button -->
+                        <button id="rotateBtn" disabled class="text-xs bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white py-1 px-2 rounded transition-colors flex items-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            旋轉 90°
+                        </button>
+                    </div>
+                    <div class="relative group">
+                        <input type="file" id="imageInput" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                        <div class="border-2 border-dashed border-slate-500 rounded-lg p-6 text-center group-hover:border-green-400 transition-colors bg-slate-700/50">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 mx-auto text-slate-400 mb-2 group-hover:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            <span class="text-sm text-slate-300" id="fileName">點擊或拖曳圖片至此</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settings -->
+                <div>
+                    <label class="block text-sm font-bold text-slate-300 mb-4">2. 調整參數</label>
+                    
+                    <!-- Pixel Size -->
+                    <div class="mb-5">
+                        <div class="flex justify-between mb-1">
+                            <span class="text-xs text-slate-400">像素大小 (影響解析度)</span>
+                            <span class="text-xs font-mono text-green-400" id="pixelSizeVal">8px</span>
+                        </div>
+                        <input type="range" id="pixelSize" min="2" max="32" value="8" step="1" 
+                            class="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-green-500 hover:accent-green-400">
+                    </div>
+
+                    <!-- Palette Size -->
+                    <div class="mb-5">
+                        <div class="flex justify-between mb-1">
+                            <span class="text-xs text-slate-400">色彩深度 (顏色數量)</span>
+                            <span class="text-xs font-mono text-green-400" id="paletteVal">16 色</span>
+                        </div>
+                        <input type="range" id="paletteSize" min="2" max="64" value="16" step="2"
+                            class="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-purple-500 hover:accent-purple-400">
+                    </div>
+
+                    <!-- Contrast -->
+                    <div class="mb-5">
+                        <div class="flex justify-between mb-1">
+                            <span class="text-xs text-slate-400">對比度</span>
+                            <span class="text-xs font-mono text-green-400" id="contrastVal">0%</span>
+                        </div>
+                        <input type="range" id="contrast" min="-50" max="50" value="10" step="5"
+                            class="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400">
+                    </div>
+
+                </div>
+
+                <!-- Actions -->
+                <div class="pt-4 border-t border-slate-700 grid grid-cols-2 gap-3">
+                    <button id="downloadBtn" disabled class="col-span-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 px-2 rounded-lg transition-colors flex justify-center items-center gap-2 text-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        下載圖片
+                    </button>
+                    
+                    <button id="exportCodeBtn" disabled class="col-span-1 bg-green-600 hover:bg-green-500 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold py-3 px-2 rounded-lg transition-colors flex justify-center items-center gap-2 text-sm shadow-lg border border-green-700">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                        </svg>
+                        取得圖像代碼
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Preview Panel -->
+        <div class="w-full lg:w-2/3 bg-black rounded-xl overflow-hidden shadow-2xl border-4 border-slate-700 flex flex-col relative">
+            
+            <!-- Canvas Container -->
+            <div class="flex-grow flex items-center justify-center p-4 bg-slate-900 overflow-auto relative min-h-[400px]" id="canvasContainer">
+                
+                <!-- Placeholder text -->
+                <div id="placeholderText" class="text-center">
+                    <p class="text-6xl mb-4 opacity-20">👾</p>
+                    <p class="text-slate-500">請先上傳圖片</p>
+                </div>
+
+                <!-- The Canvas -->
+                <canvas id="canvas" class="hidden max-w-full max-h-[80vh] shadow-lg"></canvas>
+            
+            </div>
+
+            <!-- Stats Bar -->
+            <div class="bg-slate-800 p-2 text-xs text-slate-400 flex justify-between px-4 border-t border-slate-700 font-mono">
+                <span id="dims">0 x 0</span>
+                <span id="gridDims">Grid: 0 x 0</span>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- App Source Modal (Hidden by default) -->
+    <div id="appSourceModal" class="fixed inset-0 bg-black/80 z-50 hidden flex items-center justify-center backdrop-blur-sm p-4">
+        <div class="bg-slate-800 w-full max-w-4xl h-[85vh] rounded-lg shadow-2xl flex flex-col border border-slate-600">
+            <div class="flex justify-between items-center p-4 border-b border-slate-700 bg-slate-800 rounded-t-lg">
+                <h3 class="text-lg font-bold text-white">網頁原始碼 (HTML/JS)</h3>
+                <button class="closeAppSource text-slate-400 hover:text-white"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+            </div>
+            <div class="flex-grow overflow-hidden relative bg-[#1e1e1e]">
+                <textarea id="appSourceDisplay" class="w-full h-full bg-[#1e1e1e] text-[#d4d4d4] p-4 font-mono text-xs resize-none focus:outline-none" readonly></textarea>
+            </div>
+            <div class="p-4 border-t border-slate-700 flex justify-end">
+                <button id="copyAppSourceBtn" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded">複製代碼</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pixel Data Export Modal -->
+    <div id="pixelCodeModal" class="fixed inset-0 bg-black/80 z-50 hidden flex items-center justify-center backdrop-blur-sm p-4">
+        <div class="bg-slate-900 w-full max-w-5xl h-[90vh] rounded-lg shadow-2xl flex flex-col border border-green-900/50">
+            <!-- Header -->
+            <div class="flex justify-between items-center p-4 border-b border-slate-800 bg-slate-900 rounded-t-lg">
+                <div class="flex items-center gap-3">
+                    <h3 class="text-lg font-bold text-green-400 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        圖像代碼生成 (Pixel Data)
+                    </h3>
+                    <div class="flex bg-slate-800 rounded-md p-1">
+                        <button class="format-btn active px-3 py-1 text-xs rounded hover:bg-slate-700 text-white bg-slate-600 transition-colors" data-format="js">JS Array</button>
+                        <button class="format-btn px-3 py-1 text-xs rounded hover:bg-slate-700 text-slate-400 transition-colors" data-format="css">CSS Box-Shadow</button>
+                        <button class="format-btn px-3 py-1 text-xs rounded hover:bg-slate-700 text-slate-400 transition-colors" data-format="json">JSON</button>
+                    </div>
+                </div>
+                <button id="closePixelModal" class="text-slate-400 hover:text-white transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- Code Area -->
+            <div class="flex-grow overflow-hidden relative bg-[#1e1e1e]">
+                <textarea id="pixelCodeDisplay" class="w-full h-full bg-[#1e1e1e] text-[#9cdcfe] p-4 font-mono text-xs resize-none focus:outline-none" readonly spellcheck="false"></textarea>
+            </div>
+
+            <!-- Footer -->
+            <div class="p-4 border-t border-slate-800 bg-slate-900 rounded-b-lg flex justify-between items-center">
+                <div class="text-xs text-slate-500" id="codeStats">
+                    <!-- Stats will be injected here -->
+                </div>
+                <div class="flex gap-3">
+                    <span id="copyPixelFeedback" class="text-green-400 text-sm self-center opacity-0 transition-opacity">已複製成功！</span>
+                    <button id="copyPixelCodeBtn" class="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-6 rounded transition-colors flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                        </svg>
+                        複製代碼
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Elements ---
+        const imageInput = document.getElementById('imageInput');
+        const fileNameDisplay = document.getElementById('fileName');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const placeholder = document.getElementById('placeholderText');
+        const dimsDisplay = document.getElementById('dims');
+        const gridDimsDisplay = document.getElementById('gridDims');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const exportCodeBtn = document.getElementById('exportCodeBtn');
+        const rotateBtn = document.getElementById('rotateBtn'); // New Button
+
+        // App Source Modal
+        const viewSourceBtn = document.getElementById('viewSourceBtn');
+        const appSourceModal = document.getElementById('appSourceModal');
+        const appSourceDisplay = document.getElementById('appSourceDisplay');
+        const copyAppSourceBtn = document.getElementById('copyAppSourceBtn');
+
+        // Pixel Code Modal
+        const pixelCodeModal = document.getElementById('pixelCodeModal');
+        const closePixelModal = document.getElementById('closePixelModal');
+        const pixelCodeDisplay = document.getElementById('pixelCodeDisplay');
+        const copyPixelCodeBtn = document.getElementById('copyPixelCodeBtn');
+        const copyPixelFeedback = document.getElementById('copyPixelFeedback');
+        const formatBtns = document.querySelectorAll('.format-btn');
+        const codeStats = document.getElementById('codeStats');
+
+        // Controls
+        const pixelSizeInput = document.getElementById('pixelSize');
+        const paletteSizeInput = document.getElementById('paletteSize');
+        const contrastInput = document.getElementById('contrast');
+        
+        // Value Displays
+        const pixelSizeVal = document.getElementById('pixelSizeVal');
+        const paletteVal = document.getElementById('paletteVal');
+        const contrastVal = document.getElementById('contrastVal');
+
+        // State
+        let originalImage = null;
+        let processedPixelData = null; // Stores {width, height, data: [r,g,b,a...]}
+        let currentFormat = 'js';
+
+        // --- Event Listeners ---
+
+        imageInput.addEventListener('change', handleImageUpload);
+        
+        [pixelSizeInput, paletteSizeInput, contrastInput].forEach(input => {
+            input.addEventListener('input', () => {
+                updateLabels();
+                if (originalImage) processImage();
+            });
+        });
+
+        // Rotate Logic
+        rotateBtn.addEventListener('click', () => {
+            if (!originalImage) return;
+            rotateImage90();
+        });
+
+        downloadBtn.addEventListener('click', () => {
+            if(!canvas) return;
+            const link = document.createElement('a');
+            link.download = '8bit-image.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        });
+
+        // App Source Logic
+        viewSourceBtn.addEventListener('click', () => {
+            const htmlContent = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
+            appSourceDisplay.value = htmlContent;
+            appSourceModal.classList.remove('hidden');
+        });
+        document.querySelectorAll('.closeAppSource').forEach(btn => {
+            btn.addEventListener('click', () => appSourceModal.classList.add('hidden'));
+        });
+        copyAppSourceBtn.addEventListener('click', () => copyToClipboard(appSourceDisplay, null));
+
+        // Pixel Code Logic
+        exportCodeBtn.addEventListener('click', () => {
+            if(!processedPixelData) return;
+            updatePixelCodeView();
+            pixelCodeModal.classList.remove('hidden');
+        });
+        closePixelModal.addEventListener('click', () => pixelCodeModal.classList.add('hidden'));
+        copyPixelCodeBtn.addEventListener('click', () => copyToClipboard(pixelCodeDisplay, copyPixelFeedback));
+
+        // Format Switching
+        formatBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                formatBtns.forEach(b => {
+                    b.classList.remove('active', 'bg-slate-600', 'text-white');
+                    b.classList.add('text-slate-400');
+                });
+                e.target.classList.add('active', 'bg-slate-600', 'text-white');
+                e.target.classList.remove('text-slate-400');
+                currentFormat = e.target.dataset.format;
+                updatePixelCodeView();
+            });
+        });
+
+        function copyToClipboard(textarea, feedbackEl) {
+            textarea.select();
+            textarea.setSelectionRange(0, 99999);
+            
+            navigator.clipboard.writeText(textarea.value).then(() => {
+                if(feedbackEl) showFeedback(feedbackEl);
+            }).catch(() => {
+                document.execCommand('copy');
+                if(feedbackEl) showFeedback(feedbackEl);
+            });
+        }
+
+        function showFeedback(el) {
+            el.classList.remove('opacity-0');
+            setTimeout(() => el.classList.add('opacity-0'), 2000);
+        }
+
+        function updateLabels() {
+            pixelSizeVal.innerText = `${pixelSizeInput.value}px`;
+            paletteVal.innerText = `${paletteSizeInput.value} 色`;
+            contrastVal.innerText = `${contrastInput.value}%`;
+        }
+
+        function handleImageUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            fileNameDisplay.innerText = file.name;
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    // Update state
+                    originalImage = img;
+                    // Enable UI
+                    placeholder.classList.add('hidden');
+                    canvas.classList.remove('hidden');
+                    downloadBtn.disabled = false;
+                    exportCodeBtn.disabled = false;
+                    rotateBtn.disabled = false; // Enable rotate
+                    processImage();
+                }
+                img.src = event.target.result;
+            }
+            reader.readAsDataURL(file);
+        }
+
+        // --- Rotation Logic ---
+        function rotateImage90() {
+            // Create a temporary canvas to handle the rotation
+            const tempCanvas = document.createElement('canvas');
+            const w = originalImage.width;
+            const h = originalImage.height;
+
+            // Swap dimensions for 90 degree rotation
+            tempCanvas.width = h;
+            tempCanvas.height = w;
+            
+            const tempCtx = tempCanvas.getContext('2d');
+
+            // Move to center to rotate
+            tempCtx.translate(tempCanvas.width / 2, tempCanvas.height / 2);
+            tempCtx.rotate(90 * Math.PI / 180); // Rotate 90 degrees
+            tempCtx.drawImage(originalImage, -w / 2, -h / 2);
+
+            // Create a new image from the rotated canvas
+            const newImg = new Image();
+            newImg.onload = function() {
+                originalImage = newImg;
+                processImage(); // Re-process with the rotated image
+            };
+            newImg.src = tempCanvas.toDataURL();
+        }
+
+        // --- Core Image Processing ---
+
+        function processImage() {
+            if (!originalImage) return;
+
+            const pixelSize = parseInt(pixelSizeInput.value);
+            const paletteFactor = parseInt(paletteSizeInput.value);
+            const contrast = parseInt(contrastInput.value);
+
+            const w = originalImage.width;
+            const h = originalImage.height;
+            const smallW = Math.ceil(w / pixelSize);
+            const smallH = Math.ceil(h / pixelSize);
+
+            // Offscreen canvas for processing
+            const offCanvas = document.createElement('canvas');
+            offCanvas.width = smallW;
+            offCanvas.height = smallH;
+            const offCtx = offCanvas.getContext('2d');
+            offCtx.imageSmoothingEnabled = false;
+            offCtx.drawImage(originalImage, 0, 0, smallW, smallH);
+
+            // Pixel Manipulation
+            const imageData = offCtx.getImageData(0, 0, smallW, smallH);
+            const data = imageData.data;
+            const contrastFactor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+            const step = 255 / (paletteFactor - 1);
+
+            for (let i = 0; i < data.length; i += 4) {
+                let r = data[i];
+                let g = data[i+1];
+                let b = data[i+2];
+
+                // Contrast
+                r = clamp((contrastFactor * (r - 128)) + 128);
+                g = clamp((contrastFactor * (g - 128)) + 128);
+                b = clamp((contrastFactor * (b - 128)) + 128);
+
+                // Quantization
+                r = Math.round(r / step) * step;
+                g = Math.round(g / step) * step;
+                b = Math.round(b / step) * step;
+
+                data[i] = r;
+                data[i+1] = g;
+                data[i+2] = b;
+            }
+
+            offCtx.putImageData(imageData, 0, 0);
+
+            // Save processed data for export
+            processedPixelData = {
+                width: smallW,
+                height: smallH,
+                data: data // Reference to the modified Uint8ClampedArray
+            };
+
+            // Render to Main Canvas
+            canvas.width = w;
+            canvas.height = h;
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(offCanvas, 0, 0, smallW, smallH, 0, 0, canvas.width, canvas.height);
+
+            dimsDisplay.innerText = `${w} x ${h} px`;
+            gridDimsDisplay.innerText = `Grid: ${smallW}x${smallH}`;
+        }
+
+        function clamp(value) {
+            return Math.max(0, Math.min(255, value));
+        }
+
+        function rgbToHex(r, g, b, a) {
+            if (a === 0) return null; // Transparent
+            return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
+        }
+
+        // --- Code Generation Logic ---
+
+        function updatePixelCodeView() {
+            if (!processedPixelData) return;
+            
+            const { width, height, data } = processedPixelData;
+            let output = "";
+            let statsText = `Matrix size: ${width} x ${height} (${width*height} pixels)`;
+
+            if (currentFormat === 'js') {
+                output = generateJSArray(width, height, data);
+            } else if (currentFormat === 'css') {
+                output = generateCSS(width, height, data);
+            } else if (currentFormat === 'json') {
+                output = generateJSON(width, height, data);
+            }
+
+            pixelCodeDisplay.value = output;
+            codeStats.innerText = statsText;
+        }
+
+        function generateJSArray(w, h, data) {
+            let s = `// ${w}x${h} Pixel Art Matrix\nconst sprite = [\n`;
+            for (let y = 0; y < h; y++) {
+                s += "  [";
+                for (let x = 0; x < w; x++) {
+                    const idx = (y * w + x) * 4;
+                    const hex = rgbToHex(data[idx], data[idx+1], data[idx+2], data[idx+3]);
+                    // Use 'null' for transparent or hex string
+                    s += hex ? `"${hex}"` : "null";
+                    if (x < w - 1) s += ", ";
+                }
+                s += "],\n";
+            }
+            s += "];";
+            return s;
+        }
+
+        function generateCSS(w, h, data) {
+            // Generates a single-element CSS pixel art using box-shadow
+            let shadows = [];
+            let pixelSize = 1; // logical pixel unit in the CSS
+            
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const idx = (y * w + x) * 4;
+                    const hex = rgbToHex(data[idx], data[idx+1], data[idx+2], data[idx+3]);
+                    if (hex) {
+                        shadows.push(`${(x+1)*pixelSize}px ${(y+1)*pixelSize}px 0 ${hex}`);
+                    }
+                }
+            }
+
+            return `/* CSS Pixel Art (Single Div) */
+.pixel-art {
+  width: ${pixelSize}px;
+  height: ${pixelSize}px;
+  background-color: transparent;
+  box-shadow: \n  ${shadows.join(',\n  ')};
+}`;
+        }
+
+        function generateJSON(w, h, data) {
+            let pixels = [];
+            for (let i = 0; i < data.length; i += 4) {
+                const hex = rgbToHex(data[i], data[i+1], data[i+2], data[i+3]);
+                pixels.push(hex);
+            }
+            const obj = {
+                width: w,
+                height: h,
+                pixels: pixels
+            };
+            return JSON.stringify(obj, null, 2);
+        }
+
+    </script>
+</body>
+</html>
